@@ -47,6 +47,7 @@ With the confirmed context, break the project down into atomic tasks. Each task 
 - Have a clear and verifiable output
 - Explicitly declare its dependencies
 - Be small enough to complete in a single agent session
+- Stop and ask the user to analyze the progress and wait until the want to continue
 
 ### Decomposition rules
 
@@ -154,8 +155,6 @@ Agents do **not** have an intermediate folder for generated files. They write di
 
 ### File: `state/task_XXX.state.json`
 
-Write as compact JSON (no indentation). Example:
-
 ```json
 {"task_id":"task_XXX","name":"[task name]","state":"pending","dependencies":["task_YYY"],"agents":{"[agent_A]":{"state":"pending","started_at":null,"completed_at":null,"last_checkpoint":null,"attempts":0,"error":null}},"audit":{"state":"pending","result":null,"completed_at":null},"created_at":"[timestamp]","updated_at":"[timestamp]"}
 ```
@@ -163,8 +162,6 @@ Write as compact JSON (no indentation). Example:
 ---
 
 ### File: `state/orchestrator.state.json`
-
-Write as compact JSON (no indentation). Example:
 
 ```json
 {"version":"1.0","project":"[name]","general_state":"ready","current_phase":"execution","total_tasks":0,"done_tasks":0,"in_progress_tasks":[],"blocked_tasks":[],"failed_tasks":[],"started_at":"[timestamp]","last_checkpoint":"[timestamp]"}
@@ -175,7 +172,6 @@ Write as compact JSON (no indentation). Example:
 ### File: `contracts/[agent].contract.json`
 
 Defines the exact schema that agent must produce in `output.json`. The Auditor will use this to validate.
-Write as compact JSON (no indentation). Example:
 
 ```json
 {"agent":"[name]","version":"1.0","output_schema":{"state":"string: done | partial | failed","summary":"string","changes":[{"action":"string: created | modified | deleted","path":"string: relative path from project root"}],"metadata":{"duration_seconds":"number","tokens_used":"number | null"},"specific_fields":{"[field]":"[type and description]"}}}
@@ -261,6 +257,7 @@ Next step: run the manager subagent
 
 ## General Rules
 
+- **Always compact JSON** all .json files must be formatted as JSON compact.
 - **Never assume** what the user wants. If there is ambiguity, ask.
 - **Never start** creating files without confirmed minimum context.
 - **Always use ISO 8601 timestamps** in state files.
