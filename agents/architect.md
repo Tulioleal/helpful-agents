@@ -147,6 +147,11 @@ Agents do **not** have an intermediate folder for generated files. They write di
 ## Completion Criteria
 [Verifiable and concrete condition for the Auditor to validate]
 
+## Parallelism
+parallel: false
+# Si es true, todos los agentes de esta tarea se dispatcharán simultáneamente.
+# Solo usar si los agentes no escriben al mismo archivo del proyecto.
+
 ## Notes
 [Technical considerations, edge cases, relevant design decisions]
 ```
@@ -156,7 +161,7 @@ Agents do **not** have an intermediate folder for generated files. They write di
 ### File: `state/task_XXX.state.json`
 
 ```json
-{"task_id":"task_XXX","name":"[task name]","state":"pending","dependencies":["task_YYY"],"agents":{"[agent_A]":{"state":"pending","started_at":null,"completed_at":null,"last_checkpoint":null,"attempts":0,"error":null}},"audit":{"state":"pending","result":null,"completed_at":null},"created_at":"[timestamp]","updated_at":"[timestamp]"}
+{"task_id":"task_XXX","name":"[task name]","state":"pending","parallel":false,"dependencies":["task_YYY"],"agents":{"[agent_A]":{"state":"pending","started_at":null,"completed_at":null,"last_checkpoint":null,"attempts":0,"error":null}},"audit":{"state":"pending","result":null,"completed_at":null},"created_at":"[timestamp]","updated_at":"[timestamp]"}
 ```
 
 ---
@@ -202,6 +207,9 @@ Read `context.md` before starting.
 - Write generated files **directly in the project** at the paths listed below
 - Log every file touched in: `outputs/task_[ID]/[agent]/output.json`
 - Follow the output.json schema defined in: `contracts/[agent].contract.json`
+- Write `outputs/task_[ID]/[agent]/status.json` upon completion with exactly these fields:
+  - `checkpoint`: non-empty string describing the last completed step
+  - `completed_at`: ISO 8601 timestamp
 
 ### Paths where you must write:
 - [path/to/file_1.ext]
@@ -210,6 +218,9 @@ Read `context.md` before starting.
 ## Checkpoints
 Before each costly operation (external call, long generation, large file write),
 update `state/task_[ID].state.json` with your `last_checkpoint`.
+When your entire execution is complete, overwrite status.json with the final
+checkpoint and the completion timestamp. Without this file the Auditor will
+reject your output.
 
 ## Completion Criteria
 [Exact condition under which you can consider your work done]
@@ -225,8 +236,8 @@ update `state/task_[ID].state.json` with your `last_checkpoint`.
 Once all definition files are created:
 
 1. Review the unique agents required across all tasks
-2. For each agent, check if it exists in the agent repository: `[REPO_URL]`
-3. Download each agent to `agents/[agent_name]/`
+2. For each agent, check if it exists in the repository README.md file on the root folder: `https://github.com/Tulioleal/helpful-agents`
+3. Download only the agents you need to `.claude/agents/[agent_name]/`
 4. If an agent does not exist in the repo, register it in `state/orchestrator.state.json` under `"missing_agents"` and notify the user before continuing
 
 ---

@@ -26,7 +26,7 @@ context.md                        ✓ / ✗
 tasks/                            ✓ / ✗  (at least 1 task)
 state/orchestrator.state.json     ✓ / ✗
 contracts/                        ✓ / ✗
-agents/                           ✓ / ✗
+.claude/agents/                   ✓ / ✗
 ```
 
 If anything is missing, **stop execution** and notify the user. Do not attempt to fix it yourself — that is the Architect's responsibility.
@@ -75,10 +75,12 @@ WHILE there are tasks that are not "done" or "failed":
   5. When an agent finishes:
      a. Notify the Auditor for that task/agent
      b. Wait for the Auditor's result
-     c. If approved → mark agent as "done"
-     d. If rejected → mark agent as "failed", increment attempts
-     e. Check if all agents in the task are "done"
-     f. If yes → mark task as "done", check which tasks become unblocked
+     c. Check if outputs/task_XXX/[agent]/escalation.json exists
+        - If yes → mark task as "permanently_blocked", stop retrying, notify user immediately. Do not continue the loop for this task.
+     d. If approved → mark agent as "done"
+     e. If rejected → mark agent as "failed", increment attempts
+     f. Check if all agents in the task are "done"
+     g. If yes → mark task as "done", check which tasks become unblocked
   6. Update orchestrator.state.json with current cycle checkpoint
 
 END LOOP
@@ -95,7 +97,7 @@ Generate final report (see closing section)
 Before dispatching a task, determine which agents within the same task can run in parallel:
 
 - Agents within a task are **sequential by default**
-- If the task defines a field `"parallel": true`, agents are dispatched simultaneously
+- Read parallel from state/task_XXX.state.json. If the field is absent or null, default to false (sequential).
 - Parallel agents must not write to the same file in the project
 
 ### How to dispatch an agent:
@@ -114,8 +116,9 @@ Before dispatching a task, determine which agents within the same task can run i
 
 ### If an agent hangs (timeout):
 
-- Timeout per agent: **30 minutes** (configurable)
-- If exceeded: mark as "failed", increment attempts, log in orchestrator
+- Timeout per agent: **30 minutes** (configurable in orchestrator.state.json)
+- Timeout cannot be enforced at runtime. Instead, on every startup recovery, check the `started_at` timestamp of any agent in `"in_progress"` state.
+- If `now - started_at > timeout` → mark as "failed", increment attempts, log in orchestrator
 - In the next cycle, it will be retried if `attempts < MAX_ATTEMPTS`
 
 ---
@@ -131,7 +134,7 @@ Before dispatching a task, determine which agents within the same task can run i
 - When changing the state of any task
 - When dispatching any agent
 - When receiving a result from the Auditor
-- Every 5 minutes as a heartbeat even if nothing changed
+- At the start of each loop iteration as a heartbeat, even if no state changed
 ```
 
 ### When to update `state/task_XXX.state.json`:
@@ -151,10 +154,21 @@ Before dispatching a task, determine which agents within the same task can run i
 | Error | Action |
 |-------|--------|
 | Agent fails with technical error | Retry up to MAX_ATTEMPTS |
-| Auditor rejects the output | Retry with rejection note appended to instructions |
+| Auditor rejects the output | Write retry context to outputs/task_XXX/[agent]/retry_context.json, then re-dispatch the agent |
 | Required files do not exist in the project | Mark as "blocked", log in orchestrator |
 | Agent not found in agents/ | Stop execution, notify user |
 | Cycle detected in dependencies | Stop execution, notify user |
+
+### Retry context format
+
+When an agent is retried, write the following file before re-dispatching:
+
+`outputs/task_XXX/[agent]/retry_context.json`
+```json
+{"attempt":2,"previous_verdict":"rejected","retry_suggestion":{"field":"[from audit.json]","expected":"[from audit.json]","found":"[from audit.json]","action":"[from audit.json]"}}
+```
+
+The agent must read this file at startup if it exists. Do not modify files in `instructions/`.
 
 ### Error log in state.json:
 
@@ -169,7 +183,7 @@ Write as compact JSON (no indentation).
 ```
 1. Register in orchestrator.state.json under "failed_tasks"
 2. Evaluate whether other tasks depend on this failed task
-3. If yes → mark those tasks as "permanently_blocked"
+3. If yes → mark those tasks as "blocked" and add a "blocked_reason" field: ```json {"state":"blocked","blocked_reason":{"type":"dependency_failed","dependency_task_id":"task_XXX"}}```
 4. Notify the user with the details of the blockage
 5. Continue with the rest of the graph if possible
 ```
@@ -209,6 +223,9 @@ Update `orchestrator.state.json` with `"general_state": "completed"` or `"comple
 
 ## General Rules
 
+- **Always write JSON files in compact format** (no indentation, no extra whitespace).
+- **Never write state files from scratch.** Always read the full file first, patch only the relevant fields, and write it back as compact JSON.
+- **Valid task states are:** `pending`, `ready`, `in_progress`, `done`, `failed`, `blocked`. Use `blocked_reason` to distinguish permanent blockage from a temporary dependency wait.
 - **Never modify** files in `tasks/` or `instructions/`. Those belong to the Architect.
 - **Never execute** a task if its dependencies are not "done".
 - **State in files always takes precedence** over any in-memory variable.
